@@ -72,7 +72,7 @@ BufferManager.prototype.slice=function(start,length){
     var buf=new Buffer(Math.min(all_len,length)),offset=0;
     this._buffers.forEach(function(pbuf,idx){
         if(pbuf.length>start){
-            var copy_len=pbuf.copy(buf,offset,start,length);
+            var copy_len=pbuf.copy(buf,offset,start,start+length);
             length-=copy_len;
             start=0;
         }else{
@@ -195,7 +195,7 @@ function mk_response(remain_data,buf,type){
     var NORMAL_EXPS=['ERROR'+CRLF,'CLIENT_ERROR','SERVER_ERROR','STORED'+CRLF,'NOT_STORED'+CRLF,"DELETED"+CRLF,"NOT_FOUND"+CRLF,"END"+CRLF];
     var i,pos;
     for(i=0;i<NORMAL_EXPS.length;i++){
-        if(bm.indexOf(ERROR_EXPS[i])==0){
+        if(bm.indexOf(NORMAL_EXPS[i])==0){
             response.buffer=bm.slice(0,bm.indexOf(CRLF)+CRLF.length);
             return response;
         }
@@ -254,7 +254,7 @@ function mk_request(remain_data,buf){
 }
 
 function add_remain_data(socket,buf,parsed_request){
-    new bm=new BufferManager(socket.remain_data,buf);
+    var bm=new BufferManager(socket.remain_data,buf);
     if(parsed_request){
         socket.remain_data=bm.slice(parsed_request.buffer.length);
     }else{
@@ -279,8 +279,8 @@ function process_request(source_socket,request){
     
     mc.on("data", function(res_buf) {
         log.debug("recieved memcache data from: " + this.remoteAddress);
-        var response=mk_response(this.remain_data,buf);
-        add_remain_data(this,buf,response);
+        var response=mk_response(this.remain_data,res_buf);
+        add_remain_data(this,res_buf,response);
         if(response){
             log.debug("transfer memcache data to client");
             source_socket.write(response.buffer);
