@@ -30,6 +30,59 @@ Buffer.prototype.indexOf=function(str){
     return -1;
 }
 
+BufferManager=function(){
+    //加入几个buffer对象，可以做slice
+    this._buffers=Array.prototype.slice.apply(arguments).filter(function(a){
+        return Buffer.isBuffer(a);
+    });
+}
+BufferManager.prototype.add=function(buf){
+    if(Buffer.isBuffer(buf)){
+        this._buffers.push(buf);
+    }else{
+        log.info("not a Buffer instance");
+    }
+}
+BufferManager.prototype.toBuffer=function(){
+    this.slice(0);
+}
+BufferManager.prototype.size=function(){
+    return this._buffers.reduce(function (prev,curr){
+        return prev+curr.length;
+    },0);
+}
+
+BufferManager.prototype.indexOf=function(str){
+    var idx=-1,len=0,i,sidx,buf;
+    for(i=0;i<this._buffers.length;i++){
+        buf=this._buffers[i];
+        sidx=buf.indexOf(str);
+        if(sidx!=-1){
+            idx=len+sidx;
+            break;
+        }else{
+            len+=buf.length;
+        }
+    }
+    return idx;
+}
+BufferManager.prototype.slice=function(start,length){
+    var all_len=this.size();
+    length=(typeof length=="undefined"?all_len-start:length);
+    var buf=new Buffer(Math.min(all_len,length)),offset=0;
+    this._buffers.forEach(function(pbuf,idx){
+        if(pbuf.length>start){
+            var copy_len=pbuf.copy(buf,offset,start,length);
+            length-=copy_len;
+            start=0;
+        }else{
+            start-=pbuf.length;
+        }
+    });
+    return buf;
+}
+
+
 function hashCode(str) {
     //hash函数，用于选择memcache，可重新实现，用于选memcache，现在这个兼容java的String.hashCode
     var h = 0,
@@ -92,24 +145,17 @@ function remove_from_pool(socket) {
     }
 }
 
-function filter_own_msg(buf, socket) {
+function process_own_request(socket,request) {
     //TODO 如果是不用转发给memcache的命令，在此处理，并返回true，否则返回false;
     return false;
 }
 
-function choose_memcache(buf) {
+function choose_memcache(request) {
     //根据cmd的内容，选择要转发的memcache连接，如果连接池里没有连接了，就新建一个连接
-    var pos, cmd, tokens;
-    pos = buf.indexOf(CRLF);
-    cmd = buf.toString('utf8',0, pos);
-    log.debug(buf.toString());
-    log.debug("parseed cmd is :"+cmd);
-    tokens = cmd.split(" ");
-
-    if (['set', 'add', 'replace', 'get', 'delete', 'incr', 'decr'].indexOf(tokens[0].toLowerCase()) < 0) {
+    if (['set', 'add', 'replace', 'get', 'delete', 'incr', 'decr'].indexOf(request.type) < 0) {
         return false;
     }
-    var hash=hashCode(tokens[1]);
+    var hash=hashCode(request.key);
     var idx=hash % servers.length;
     var pool=conn_pool[idx];
     if(pool.length>0){
@@ -118,25 +164,18 @@ function choose_memcache(buf) {
         mc.removeAllListeners("data");
         return mc;
     }else{
-        //创建一个新连接，但不加到连接池，用完之后clean_client_socket会归还给连接池的
+        //创建一个新连接，但不加到连接池，用完之后调用release_memcache_conn会归还给连接池的
         log.info("ceate new memcache connection:"+idx);
         return create_memcache_connecton(idx,false);
     }
 }
 
-function clean_client_socket(socket) {
-    //清理掉socket.mc，将mc连接退给连接池，去掉上面的"data"事件处理函数
-    if (socket.mc) {
-        var mc = socket.mc;
-        //TODO
-        mc.removeAllListeners("data");
-        mc.on("data", function(res_buf) {
-            log.error("ignore memcache data from: " + this.remoteAddress);
-        });
-        conn_pool[mc.idx].push(mc);
-        delete socket.mc;
-    }
+
+function release_memcache_conn(mc){
+    mc.removeAllListeners("data");
+    conn_pool[mc.idx].push(mc);
 }
+
 
 servers.forEach(function(val, idx) {
     var ip, port, tmp = val.split(":"),
@@ -148,6 +187,109 @@ servers.forEach(function(val, idx) {
     }
 });
 
+
+function mk_response(remain_data,buf,type){
+    var bm=new BufferManager(remain_data,buf);
+    var buf_len=bm.size();
+    var response={type:type};
+    var NORMAL_EXPS=['ERROR'+CRLF,'CLIENT_ERROR','SERVER_ERROR','STORED'+CRLF,'NOT_STORED'+CRLF,"DELETED"+CRLF,"NOT_FOUND"+CRLF,"END"+CRLF];
+    var i,pos;
+    for(i=0;i<NORMAL_EXPS.length;i++){
+        if(bm.indexOf(ERROR_EXPS[i])==0){
+            response.buffer=bm.slice(0,bm.indexOf(CRLF)+CRLF.length);
+            return response;
+        }
+    }
+    //data response
+    var DATA_END="\r\nEND\r\n";
+    pos=bm.indexOf(DATA_END);
+    if(pos!=-1){
+        response.buffer=bm.slice(0,pos+DATA_END.length);
+        return response;
+    }
+    return false;
+}
+
+
+function mk_request(remain_data,buf){
+    //协议解析参考文档http://www.ccvita.com/306.html
+    var bm=new BufferManager(remain_data,buf);
+    var buf_len=bm.size();
+    var cmd_pos=bm.indexOf(CRLF);
+    if(!cmd_pos==-1){
+        return false;
+    }
+    var cmd=bm.slice(0,cmd_pos).toString();
+    var tokens=cmd.split(" ");
+    var request={};
+    request.type=tokens[0].toLowerCase();
+    if(["set","add","replace","get","delete","incr","decr"].indexOf(request.type)!=-1){
+        request.key=tokens[1];
+    }
+    if(["set","add","replace"].indexOf(request.type)!=-1){
+        //这几条命令有后续的'data',长度是最后一个token;
+        var data_len=parseInt(tokens[4],10),data;
+        request.flags=tokens[2];
+        request.exptime=tokens[3];
+        if(buf_len>=data_len+cmd_pos+2*CRLF.length){
+            request.value=bm.slice(cmd_pos+2,data_len);
+            request.buffer=bm.slice(0,data_len+cmd_pos+2*CRLF.length);
+        }else{
+            //data还没收完，做不出一个request对象;
+            return false;
+        }
+    }else{
+        request.buffer=bm.slice(0,cmd_pos+CRLF.length);
+    }
+    if('delete'==request.type){
+        //在这个指定时间内，不能对这个key做add、replace
+        request.time=tokens[2];
+    }
+    if(['incr','decr'].indexOf(request.type)!=-1){
+        request.value=tokens[2];
+    }
+
+    return request;
+
+}
+
+function add_remain_data(socket,buf,parsed_request){
+    new bm=new BufferManager(socket.remain_data,buf);
+    if(parsed_request){
+        socket.remain_data=bm.slice(parsed_request.buffer.length);
+    }else{
+        socket.remain_data=bm.toBuffer();
+    }
+}
+
+function process_request(source_socket,request){
+    if (process_own_request(source_socket,request)) {
+        //这是发给proxy自身的命令，不用转发给memcache
+        return;
+    }
+    var mc=choose_memcache(request);
+    if (mc.is_connected) {
+        mc.write(request.buffer);
+    } else {
+        log.notice("not writable, wait for connected");
+        mc.once("connect", function() {
+            mc.write(buf);
+        });
+    }
+    
+    mc.on("data", function(res_buf) {
+        log.debug("recieved memcache data from: " + this.remoteAddress);
+        var response=mk_response(this.remain_data,buf);
+        add_remain_data(this,buf,response);
+        if(response){
+            log.debug("transfer memcache data to client");
+            source_socket.write(response.buffer);
+            this.removeListener("data",arguments.callee);
+            release_memcache_conn(this);
+        }
+    });
+}
+
 net.createServer(
 function(socket) {
     socket.on("connect", function() {
@@ -155,39 +297,17 @@ function(socket) {
     });
     socket.on("data", function(buf) {
         log.debug("recieved data from: " + this.remoteAddress);
-        if (!this.mc) {
-            if (filter_own_msg(buf, this)) {
-                //这是发给proxy自身的命令，不用转发给memcache
-                return;
-            }
-            this.mc = choose_memcache(buf);
-            if (this.mc) {
-                this.mc.on("data", function(res_buf) {
-                    log.debug("recieved memcache data from: " + this.remoteAddress);
-                    socket.write(res_buf);
-                });
-            } else {
-                log.error("error request");
-                this.write("ERROR\r\n");
-                return;
-            }
-        }
-        if (this.mc.is_connected) {
-            this.mc.write(buf);
-        } else {
-            log.notice("not writable, wait for connected");
-            this.mc.once("connect", function() {
-                this.write(buf);
-            });
+        var request=mk_request(this.remain_data,buf);
+        add_remain_data(this,buf,request);
+        if(request){
+            process_request(this,request);
         }
     });
     socket.on("end", function() {
         log.info("client end " + this.remoteAddress);
-        clean_client_socket(this);
     });
     socket.on("error", function() {
-        log.info("client error");
-        clean_client_socket(this);
+        log.notice("client error");
     });
 }).listen(11111);
 
