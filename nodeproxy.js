@@ -2,7 +2,8 @@
 
 net = require("net");
 Logger = require("./log");
-log = new Logger(Logger.INFO);
+//log = new Logger(Logger.INFO);
+log = new Logger(Logger.DEBUG);
 CONNECTTION_PER_SERVER = 5;
 CRLF = "\r\n";
 
@@ -72,7 +73,7 @@ BufferManager.prototype.slice=function(start,length){
     var buf=new Buffer(Math.min(all_len,length)),offset=0;
     this._buffers.forEach(function(pbuf,idx){
         if(pbuf.length>start){
-            var copy_len=pbuf.copy(buf,offset,start,start+length);
+            var copy_len=pbuf.copy(buf,offset,start,Math.min(start+length,pbuf.length));
             length-=copy_len;
             start=0;
         }else{
@@ -157,7 +158,9 @@ function choose_memcache(request) {
     }
     var hash=hashCode(request.key);
     var idx=hash % servers.length;
+    idx=idx<0?idx+servers.length:idx;
     var pool=conn_pool[idx];
+    //console.log(request.key,hash,idx);
     if(pool.length>0){
         var mc=pool.pop();
         log.info("get memcache connection:"+idx+" - "+pool.length);
@@ -268,21 +271,26 @@ function process_request(source_socket,request){
         return;
     }
     var mc=choose_memcache(request);
+    if(!mc){
+        log.error("error choose memcache connection:"+request.buffer.toString());
+        return false;
+    }
     if (mc.is_connected) {
         mc.write(request.buffer);
     } else {
         log.notice("not writable, wait for connected");
         mc.once("connect", function() {
-            mc.write(buf);
+            mc.write(request.buffer);
         });
     }
     
     mc.on("data", function(res_buf) {
-        log.debug("recieved memcache data from: " + this.remoteAddress);
-        var response=mk_response(this.remain_data,res_buf);
+        log.debug("recieved memcache data from: " + servers[this.idx]);
+        var response=mk_response(this.remain_data,res_buf,request.type);
         add_remain_data(this,res_buf,response);
         if(response){
-            log.debug("transfer memcache data to client");
+//            log.debug("transfer memcache data to client:"+response.buffer.toString());
+            log.debug("transfer memcache data to client:"+source_socket.remoteAddress);
             source_socket.write(response.buffer);
             this.removeListener("data",arguments.callee);
             release_memcache_conn(this);
