@@ -1,5 +1,6 @@
-for i in $(seq 1 1000)
+for i in $(seq 1 20)
 do
     php test.php &
+#    node test.js &
 done
 

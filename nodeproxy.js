@@ -1,8 +1,9 @@
 net = require("net");
 Logger = require("./log");
 //log = new Logger(Logger.INFO);
-log = new Logger(Logger.DEBUG);
-CONNECTTION_PER_SERVER = 5;
+//log = new Logger(Logger.DEBUG);
+log = new Logger(Logger.ERROR);
+CONNECTTION_PER_SERVER = 10;
 CRLF = "\r\n";
 
 //servers = ["10.1.146.144:11220", "10.1.146.144:11221", "10.1.146.144:11222", "10.1.146.144:11223", "10.1.146.144:11224"];
@@ -171,13 +172,15 @@ function choose_memcache(request) {
         return mc;
     }else{
         //创建一个新连接，但不加到连接池，用完之后调用release_memcache_conn会归还给连接池的
-        log.info("ceate new memcache connection:"+idx);
-        return create_memcache_connecton(idx,false);
+        //log.info("ceate new memcache connection:"+idx);
+        //return create_memcache_connecton(idx,false);
+        return false;
     }
 }
 
 
 function release_memcache_conn(mc){
+    log.debug("release memcache connection"+mc.idx);
     mc.removeAllListeners("data");
     conn_pool[mc.idx].push(mc);
 }
@@ -269,6 +272,10 @@ function add_remain_data(socket,buf,parsed_request){
     }
 }
 
+function clean_client_socket(source_socket){
+    delete source_socket.queue;
+}
+
 function process_request(source_socket,request){
     if (process_own_request(source_socket,request)) {
         //这是发给proxy自身的命令，不用转发给memcache
@@ -276,8 +283,12 @@ function process_request(source_socket,request){
     }
     var mc=choose_memcache(request);
     if(!mc){
-        log.error("error choose memcache connection:"+request.buffer.toString());
-        return false;
+        log.debug("memcache connections runs out");
+        setTimeout(function(){
+            process_request(source_socket,request);
+        },50);
+        //log.error("error choose memcache connection:"+request.buffer.toString());
+        return;
     }
     if (mc.is_connected) {
         mc.write(request.buffer);
@@ -311,8 +322,12 @@ function process_request(source_socket,request){
             }
             while(source_socket.queue.length>0){
                 if(source_socket.queue[0].res){
-                    var item=source_socket.queue.shift();
-                    source_socket.write(item.res.buffer);
+                    try{
+                        source_socket.write(source_socket.queue.shift().res.buffer);
+                    }catch(e){
+                        break;
+                        clean_client_socket(source_socket);
+                    }
                 }else{
                     break;
                 }
@@ -324,7 +339,7 @@ function process_request(source_socket,request){
     });
 }
 
-net.createServer(
+server=net.createServer(
 function(socket) {
     socket.on("connect", function() {
         log.debug("client in " + this.remoteAddress);
@@ -347,5 +362,6 @@ function(socket) {
     socket.on("error", function() {
         log.notice("client error");
     });
-}).listen(11111);
-
+});
+server.maxConnections=2000;
+server.listen(11111);
