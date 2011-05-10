@@ -1,5 +1,3 @@
-#! /usr/local/bin/node
-
 net = require("net");
 Logger = require("./log");
 //log = new Logger(Logger.INFO);
@@ -7,6 +5,7 @@ log = new Logger(Logger.DEBUG);
 CONNECTTION_PER_SERVER = 5;
 CRLF = "\r\n";
 
+//servers = ["10.1.146.144:11220", "10.1.146.144:11221", "10.1.146.144:11222", "10.1.146.144:11223", "10.1.146.144:11224"];
 servers = ["127.0.0.1:11220", "127.0.0.1:11221", "127.0.0.1:11222", "127.0.0.1:11223", "127.0.0.1:11224"];
 conn_pool = [];
 
@@ -70,7 +69,11 @@ BufferManager.prototype.indexOf=function(str){
 BufferManager.prototype.slice=function(start,length){
     var all_len=this.size();
     length=(typeof length=="undefined"?all_len-start:length);
-    var buf=new Buffer(Math.min(all_len,length)),offset=0;
+    var buf_len=Math.min(all_len,length);
+    if(buf_len<=0){
+        return false;
+    }
+    var buf=new Buffer(buf_len),offset=0;
     this._buffers.forEach(function(pbuf,idx){
         if(pbuf.length>start){
             var copy_len=pbuf.copy(buf,offset,start,Math.min(start+length,pbuf.length));
@@ -219,7 +222,8 @@ function mk_request(remain_data,buf){
     var bm=new BufferManager(remain_data,buf);
     var buf_len=bm.size();
     var cmd_pos=bm.indexOf(CRLF);
-    if(!cmd_pos==-1){
+    
+    if(cmd_pos==-1){
         return false;
     }
     var cmd=bm.slice(0,cmd_pos).toString();
@@ -283,15 +287,37 @@ function process_request(source_socket,request){
             mc.write(request.buffer);
         });
     }
-    
+    // TODO 这里需要给收到的response按request的顺序加上队列同步，明天继续
+    if(typeof source_socket.queue=='undefined'){
+        source_socket.queue=[{req:request}];
+    }else{
+        source_socket.queue.push({req:request});
+    }
     mc.on("data", function(res_buf) {
+//        log.debug("recieved memcache data from: " + servers[this.idx]+":"+res_buf.toString());
         log.debug("recieved memcache data from: " + servers[this.idx]);
         var response=mk_response(this.remain_data,res_buf,request.type);
         add_remain_data(this,res_buf,response);
         if(response){
 //            log.debug("transfer memcache data to client:"+response.buffer.toString());
             log.debug("transfer memcache data to client:"+source_socket.remoteAddress);
-            source_socket.write(response.buffer);
+            source_socket.queue.forEach(function(val){
+            });
+            for(var i=0;i<source_socket.queue.length;i++){
+                if(source_socket.queue[i].req===request){
+                   source_socket.queue[i].res=response;
+                   break;
+                }
+            }
+            while(source_socket.queue.length>0){
+                if(source_socket.queue[0].res){
+                    var item=source_socket.queue.shift();
+                    source_socket.write(item.res.buffer);
+                }else{
+                    break;
+                }
+            } 
+            
             this.removeListener("data",arguments.callee);
             release_memcache_conn(this);
         }
@@ -304,12 +330,16 @@ function(socket) {
         log.debug("client in " + this.remoteAddress);
     });
     socket.on("data", function(buf) {
+//        log.debug("recieved data from: " + this.remoteAddress+":"+buf.toString());
         log.debug("recieved data from: " + this.remoteAddress);
-        var request=mk_request(this.remain_data,buf);
-        add_remain_data(this,buf,request);
-        if(request){
-            process_request(this,request);
-        }
+        do{
+            var request=mk_request(this.remain_data,buf);
+            add_remain_data(this,buf,request);
+            buf=false;
+            if(request){
+                process_request(this,request);
+            }
+        }while(request);
     });
     socket.on("end", function() {
         log.info("client end " + this.remoteAddress);
