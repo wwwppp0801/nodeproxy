@@ -1,14 +1,27 @@
 net = require("net");
+util=require("util");
 Logger = require("./log");
-//log = new Logger(Logger.INFO);
+log = new Logger(Logger.INFO);
 //log = new Logger(Logger.DEBUG);
-log = new Logger(Logger.ERROR);
-CONNECTTION_PER_SERVER = 10;
+//log = new Logger(Logger.ERROR);
+//CONNECTTION_PER_SERVER = 5;
+CONNECTTION_PER_SERVER = 2;
 CRLF = "\r\n";
 
 //servers = ["10.1.146.144:11220", "10.1.146.144:11221", "10.1.146.144:11222", "10.1.146.144:11223", "10.1.146.144:11224"];
-servers = ["127.0.0.1:11220", "127.0.0.1:11221", "127.0.0.1:11222", "127.0.0.1:11223", "127.0.0.1:11224"];
+servers = ["10.1.146.144:11220"];
+//servers = ["127.0.0.1:11220", "127.0.0.1:11221", "127.0.0.1:11222", "127.0.0.1:11223", "127.0.0.1:11224"];
 conn_pool = [];
+conn_num=0;
+servers.forEach(function(val, idx) {
+    var ip, port, tmp = val.split(":"),
+    i;
+    ip = tmp[0];
+    port = tmp[1];
+    for (i = 0; i < CONNECTTION_PER_SERVER; i++) {
+        create_memcache_connecton(idx,true);
+    }
+});
 
 Buffer.prototype.indexOf=function(str){
     var len=str.length,
@@ -119,6 +132,7 @@ function create_memcache_connecton(idx,add_to_pool) {
         this.is_connected = true;
         if(add_to_pool){
             conn_pool[idx].push(this);
+            conn_num++;
         }
     });
 
@@ -127,6 +141,7 @@ function create_memcache_connecton(idx,add_to_pool) {
         log.error(e);
     });
     socket.on("close", function(had_error) {
+        log.info("memcache conn has been closed");
         if (had_error) {
             this.destroy();
         }
@@ -141,12 +156,12 @@ function clean_server_socket(socket) {
     socket.removeAllListeners("close");
     socket.removeAllListeners("connect");
     remove_from_pool(socket);
-    delete socket.is_connected;
 }
 function remove_from_pool(socket) {
     var i = conn_pool[socket.idx].indexOf(socket);
     if (i >= 0) {
         conn_pool[socket.idx].splice(i, 1);
+        conn_num--;
     }
 }
 
@@ -167,7 +182,7 @@ function choose_memcache(request) {
     //console.log(request.key,hash,idx);
     if(pool.length>0){
         var mc=pool.pop();
-        log.info("get memcache connection:"+idx+" - "+pool.length);
+        conn_num--;
         mc.removeAllListeners("data");
         return mc;
     }else{
@@ -183,18 +198,11 @@ function release_memcache_conn(mc){
     log.debug("release memcache connection"+mc.idx);
     mc.removeAllListeners("data");
     conn_pool[mc.idx].push(mc);
+    conn_num++;
+    delay_process();
 }
 
 
-servers.forEach(function(val, idx) {
-    var ip, port, tmp = val.split(":"),
-    i;
-    ip = tmp[0];
-    port = tmp[1];
-    for (i = 0; i < CONNECTTION_PER_SERVER; i++) {
-        create_memcache_connecton(idx,true);
-    }
-});
 
 
 function mk_response(remain_data,buf,type){
@@ -276,19 +284,44 @@ function clean_client_socket(source_socket){
     delete source_socket.queue;
 }
 
-function process_request(source_socket,request){
+//连接池里空了之后，请求会先加入到这个队列里
+un_processed_queue=[];
+function delay_process(){
+    if(un_processed_queue.length==0||conn_num==0){
+        return false;
+    }
+    var i,queue_item,process_ret;
+    for(i=0;i<un_processed_queue.length;i++){
+        queue_item=un_processed_queue[i];
+        process_ret=process_request(queue_item.source_socket,queue_item.request,true);
+        if(process_ret===false){
+            //返回false表示仍然连接池仍然没有连接
+            continue;
+        }else{
+            un_processed_queue.splice(i,1);
+            //去掉队列其中一项之后，后面的下标也变化了，为了不跳过下一项，所以要i--；
+            i--;
+        }
+        if(conn_num==0){
+            return false;
+        }
+    }
+}
+
+function process_request(source_socket,request,is_delay){
     if (process_own_request(source_socket,request)) {
         //这是发给proxy自身的命令，不用转发给memcache
         return;
     }
     var mc=choose_memcache(request);
     if(!mc){
-        log.debug("memcache connections runs out");
-        setTimeout(function(){
-            process_request(source_socket,request);
-        },50);
+//        log.debug("memcache connections runs out");
+        if(!is_delay){
+            un_processed_queue.push({source_socket:source_socket,request:request});
+            log.debug("un_processed_queuei length:"+un_processed_queue.length);
+        }
         //log.error("error choose memcache connection:"+request.buffer.toString());
-        return;
+        return false;
     }
     if (mc.is_connected) {
         mc.write(request.buffer);
@@ -298,12 +331,6 @@ function process_request(source_socket,request){
             mc.write(request.buffer);
         });
     }
-    // TODO 这里需要给收到的response按request的顺序加上队列同步，明天继续
-    if(typeof source_socket.queue=='undefined'){
-        source_socket.queue=[{req:request}];
-    }else{
-        source_socket.queue.push({req:request});
-    }
     mc.on("data", function(res_buf) {
 //        log.debug("recieved memcache data from: " + servers[this.idx]+":"+res_buf.toString());
         log.debug("recieved memcache data from: " + servers[this.idx]);
@@ -312,8 +339,6 @@ function process_request(source_socket,request){
         if(response){
 //            log.debug("transfer memcache data to client:"+response.buffer.toString());
             log.debug("transfer memcache data to client:"+source_socket.remoteAddress);
-            source_socket.queue.forEach(function(val){
-            });
             for(var i=0;i<source_socket.queue.length;i++){
                 if(source_socket.queue[i].req===request){
                    source_socket.queue[i].res=response;
@@ -325,20 +350,29 @@ function process_request(source_socket,request){
                     try{
                         source_socket.write(source_socket.queue.shift().res.buffer);
                     }catch(e){
-                        break;
                         clean_client_socket(source_socket);
+                        source_socket.destroy();
+                        break;
                     }
                 }else{
                     break;
                 }
+            }
+            if(source_socket.queue&&source_socket.queue[0]){
+                log.info(source_socket.queue[0].request.key);
             } 
-            
             this.removeListener("data",arguments.callee);
             release_memcache_conn(this);
         }
     });
 }
-
+function push_request_to_return_queue(source_socket,request){
+    if(typeof source_socket.queue=='undefined'){
+        source_socket.queue=[{req:request}];
+    }else{
+        source_socket.queue.push({req:request});
+    }
+}
 server=net.createServer(
 function(socket) {
     socket.on("connect", function() {
@@ -352,6 +386,11 @@ function(socket) {
             add_remain_data(this,buf,request);
             buf=false;
             if(request){
+                //memcache连接的数量有限时， 优先处理之前积压的请求
+                delay_process();
+                //把请求加到来源端口的队列，保证返回时的顺序
+                push_request_to_return_queue(this,request);
+                //如果还有memcache连接，则处理此请求，否则发到延迟队列
                 process_request(this,request);
             }
         }while(request);
