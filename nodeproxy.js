@@ -1,16 +1,17 @@
 net = require("net");
 util=require("util");
 Logger = require("./log");
+BufferManager=require('./buffermanager').BufferManager;
 log = new Logger(Logger.INFO);
 //log = new Logger(Logger.DEBUG);
 //log = new Logger(Logger.ERROR);
 //CONNECTTION_PER_SERVER = 5;
-CONNECTTION_PER_SERVER = 2;
+CONNECTTION_PER_SERVER = 1;
 CRLF = "\r\n";
 
 //servers = ["10.1.146.144:11220", "10.1.146.144:11221", "10.1.146.144:11222", "10.1.146.144:11223", "10.1.146.144:11224"];
-servers = ["10.1.146.144:11220"];
-//servers = ["127.0.0.1:11220", "127.0.0.1:11221", "127.0.0.1:11222", "127.0.0.1:11223", "127.0.0.1:11224"];
+//servers = ["10.1.146.144:11220"];
+servers = ["127.0.0.1:11220", "127.0.0.1:11221", "127.0.0.1:11222", "127.0.0.1:11223", "127.0.0.1:11224"];
 conn_pool = [];
 conn_num=0;
 servers.forEach(function(val, idx) {
@@ -22,83 +23,6 @@ servers.forEach(function(val, idx) {
         create_memcache_connecton(idx,true);
     }
 });
-
-Buffer.prototype.indexOf=function(str){
-    var len=str.length,
-        buf_len=this.length,
-        i,j,ii;
-    if(len>0){
-        for(i=0;i<buf_len;i++){
-            ii=i;
-            j=0;
-            while(ii<buf_len&&j<len){
-                if(this[ii++]!=str.charCodeAt(j++)){
-                    break;
-                }
-                if(j==len){
-                    return i;
-                }
-            }
-        }
-    }
-    return -1;
-}
-
-BufferManager=function(){
-    //加入几个buffer对象，可以做slice
-    this._buffers=Array.prototype.slice.apply(arguments).filter(function(a){
-        return Buffer.isBuffer(a);
-    });
-}
-BufferManager.prototype.add=function(buf){
-    if(Buffer.isBuffer(buf)){
-        this._buffers.push(buf);
-    }else{
-        log.info("not a Buffer instance");
-    }
-}
-BufferManager.prototype.toBuffer=function(){
-    this.slice(0);
-}
-BufferManager.prototype.size=function(){
-    return this._buffers.reduce(function (prev,curr){
-        return prev+curr.length;
-    },0);
-}
-
-BufferManager.prototype.indexOf=function(str){
-    var idx=-1,len=0,i,sidx,buf;
-    for(i=0;i<this._buffers.length;i++){
-        buf=this._buffers[i];
-        sidx=buf.indexOf(str);
-        if(sidx!=-1){
-            idx=len+sidx;
-            break;
-        }else{
-            len+=buf.length;
-        }
-    }
-    return idx;
-}
-BufferManager.prototype.slice=function(start,length){
-    var all_len=this.size();
-    length=(typeof length=="undefined"?all_len-start:length);
-    var buf_len=Math.min(all_len,length);
-    if(buf_len<=0){
-        return false;
-    }
-    var buf=new Buffer(buf_len),offset=0;
-    this._buffers.forEach(function(pbuf,idx){
-        if(pbuf.length>start){
-            var copy_len=pbuf.copy(buf,offset,start,Math.min(start+length,pbuf.length));
-            length-=copy_len;
-            start=0;
-        }else{
-            start-=pbuf.length;
-        }
-    });
-    return buf;
-}
 
 
 function hashCode(str) {
@@ -179,7 +103,6 @@ function choose_memcache(request) {
     var idx=hash % servers.length;
     idx=idx<0?idx+servers.length:idx;
     var pool=conn_pool[idx];
-    //console.log(request.key,hash,idx);
     if(pool.length>0){
         var mc=pool.pop();
         conn_num--;
@@ -243,6 +166,17 @@ function mk_request(remain_data,buf){
     request.type=tokens[0].toLowerCase();
     if(["set","add","replace","get","delete","incr","decr"].indexOf(request.type)!=-1){
         request.key=tokens[1];
+    }else{
+        if(remain_data){
+//            console.log(remain_data.toString());
+        }else{
+//            console.log(buf.toString());
+        }
+        //console.log(bm._buffers[0].toString());
+        console.log(bm.toBuffer().toString());
+        console.log("cmd:"+cmd);
+        log.error("request parse error!");
+        process.exit(255);
     }
     if(["set","add","replace"].indexOf(request.type)!=-1){
         //这几条命令有后续的'data',长度是最后一个token;
@@ -254,6 +188,9 @@ function mk_request(remain_data,buf){
             request.buffer=bm.slice(0,data_len+cmd_pos+2*CRLF.length);
         }else{
             //data还没收完，做不出一个request对象;
+            //log.error("freedata parse error!");
+            //process.exit(255);
+
             return false;
         }
     }else{
@@ -272,11 +209,17 @@ function mk_request(remain_data,buf){
 }
 
 function add_remain_data(socket,buf,parsed_request){
+    if(!buf&&!parsed_request){
+        return false;
+    }
     var bm=new BufferManager(socket.remain_data,buf);
     if(parsed_request){
         socket.remain_data=bm.slice(parsed_request.buffer.length);
     }else{
         socket.remain_data=bm.toBuffer();
+    }
+    if(typeof socket.remain_data!='undefined'){
+        //console.log(socket.remain_data.toString('utf8',0,20));
     }
 }
 
@@ -350,6 +293,7 @@ function process_request(source_socket,request,is_delay){
                     try{
                         source_socket.write(source_socket.queue.shift().res.buffer);
                     }catch(e){
+                        log.error("source_socket write error");
                         clean_client_socket(source_socket);
                         source_socket.destroy();
                         break;
@@ -359,7 +303,12 @@ function process_request(source_socket,request,is_delay){
                 }
             }
             if(source_socket.queue&&source_socket.queue[0]){
-                log.info(source_socket.queue[0].request.key);
+                if(typeof source_socket.queue[0].req.key=='undefined'){
+                    log.error("request has no key");
+                    process.exit(255);
+                }else{
+                    //log.info(source_socket.queue[0].req.key);
+                }
             } 
             this.removeListener("data",arguments.callee);
             release_memcache_conn(this);
