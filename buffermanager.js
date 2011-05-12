@@ -1,10 +1,11 @@
-
-Buffer.prototype.indexOf=function(str){
+/*
+Buffer.prototype.indexOf=function(str,startIdx){
     var len=str.length,
         buf_len=this.length,
         i,j,ii;
+    startIdx=(startIdx>0)?startIdx:0;
     if(len>0){
-        for(i=0;i<buf_len;i++){
+        for(i=startIdx;i<buf_len;i++){
             ii=i;
             j=0;
             while(ii<buf_len&&j<len){
@@ -19,7 +20,7 @@ Buffer.prototype.indexOf=function(str){
     }
     return -1;
 }
-
+*/
 exports.BufferManager=BufferManager=function(){
     //加入几个buffer对象，可以做slice
     this._buffers=Array.prototype.slice.apply(arguments).filter(function(a){
@@ -43,18 +44,34 @@ BufferManager.prototype.size=function(){
 }
 
 BufferManager.prototype.indexOf=function(str){
-    var idx=-1,len=0,i,sidx,buf;
-    for(i=0;i<this._buffers.length;i++){
-        buf=this._buffers[i];
-        sidx=buf.indexOf(str);
-        if(sidx!=-1){
-            idx=len+sidx;
-            break;
+    //return this.toBuffer().indexOf(str);
+    var all_len=this.size(),buf_num=this._buffers.length,str_len=str.length;
+    var idx,buf_offset=0,offset=0,buf=this._buffers[buf_offset],str_offset=0;
+    for (idx=0;idx<all_len;idx++){
+        if(str.charCodeAt(str_offset)==buf[offset]){
+            str_offset++;
         }else{
-            len+=buf.length;
+            idx-=str_offset;
+            offset-=str_offset;
+            str_offset=0;
+        }
+
+        if(str_offset==str_len){
+            return idx-str_offset+1;
+        }
+        
+        offset++;
+        while(buf&&offset>=buf.length){
+            offset-=buf.length;
+            buf=this._buffers[++buf_offset];
+        }
+        while(offset<0){
+            buf=this._buffers[--buf_offset];
+            offset+=buf.length;
         }
     }
-    return idx;
+
+    return -1;
 }
 BufferManager.prototype.slice=function(start,length){
     var all_len=this.size();
