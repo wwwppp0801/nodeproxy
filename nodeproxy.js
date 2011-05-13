@@ -1,17 +1,32 @@
+//usage: node nodeproxy.js -s 127.0.0.1:11220,127.0.0.1:11221 -p 11111 -n 5 -b 0.0.0.0
 net = require("net");
 util=require("util");
 Logger = require("./log");
+optparser = require("./optparser");
 BufferManager=require('./buffermanager').BufferManager;
 log = new Logger(Logger.INFO);
 //log = new Logger(Logger.DEBUG);
 //log = new Logger(Logger.ERROR);
 //CONNECTTION_PER_SERVER = 5;
-CONNECTTION_PER_SERVER = 1;
+
+options=optparser.parse([
+        {'short':"-n", 'long':"--connnum", 'dest':"conn_num",
+            'default':5,metavar:5, help:'connections per memcache server'},
+        {'short':"-b", 'long':"--bind", dest:"bind", 
+            'default':'0.0.0.0',metavar:"0.0.0.0",help:"bind this server address"},
+        {'short':"-p", 'long':"--port", dest:"port", 
+            'default':11111,metavar:"11111",help:"bind this server port"},
+        {'short':"-s", 'long':"--servers", dest:"servers", 
+            'notnull':true , metavar:"127.0.0.1:11211,127.0.0.1:11212,127.0.0.1:11213",help:"define memcache servers"}
+]);
+
+CONNECTTION_PER_SERVER = options.conn_num;
 CRLF = "\r\n";
 
 //servers = ["10.1.146.144:11220", "10.1.146.144:11221", "10.1.146.144:11222", "10.1.146.144:11223", "10.1.146.144:11224"];
 //servers = ["10.1.146.144:11220"];
-servers = ["127.0.0.1:11220", "127.0.0.1:11221", "127.0.0.1:11222", "127.0.0.1:11223", "127.0.0.1:11224"];
+//servers = ["127.0.0.1:11220", "127.0.0.1:11221", "127.0.0.1:11222", "127.0.0.1:11223", "127.0.0.1:11224"];
+servers=options.servers.split(',');
 conn_pool = [];
 conn_num=0;
 servers.forEach(function(val, idx) {
@@ -352,4 +367,4 @@ function(socket) {
     });
 });
 server.maxConnections=2000;
-server.listen(11111);
+server.listen(options.port,options.bind);
