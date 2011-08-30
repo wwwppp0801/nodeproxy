@@ -43,12 +43,24 @@ BufferManager.prototype.size=function(){
     },0);
 }
 
-BufferManager.prototype.indexOf=function(str){
+BufferManager.prototype.indexOf=function(str,start){
     //return this.toBuffer().indexOf(str);
-    var all_len=this.size(),buf_num=this._buffers.length,str_len=str.length;
-    var idx,buf_offset=0,offset=0,buf=this._buffers[buf_offset],str_offset=0;
-    for (idx=0;idx<all_len;idx++){
-        if(str.charCodeAt(str_offset)==buf[offset]){
+    start=(typeof start=='undefined')?0:start;
+    var indexBuf=new Buffer(str);
+    var all_len=this.size(),buf_num=this._buffers.length,str_len=indexBuf.length;
+    var idx,buf_offset=0,offset=start,buf=this._buffers[buf_offset],str_offset=0;
+    for (idx=start;idx<all_len;idx++){
+        ///////////tune offset/////////////
+        while(buf&&offset>=buf.length){
+            offset-=buf.length;
+            buf=this._buffers[++buf_offset];
+        }
+        while(offset<0){
+            buf=this._buffers[--buf_offset];
+            offset+=buf.length;
+        }
+        ///////////end tune/////////////
+        if(indexBuf[str_offset]===buf[offset]){
             str_offset++;
         }else{
             idx-=str_offset;
@@ -61,25 +73,21 @@ BufferManager.prototype.indexOf=function(str){
         }
         
         offset++;
-        while(buf&&offset>=buf.length){
-            offset-=buf.length;
-            buf=this._buffers[++buf_offset];
-        }
-        while(offset<0){
-            buf=this._buffers[--buf_offset];
-            offset+=buf.length;
-        }
     }
 
     return -1;
 }
 BufferManager.prototype.slice=function(start,length){
-    var all_len=this.size();
-    length=(typeof length=="undefined"?all_len-start:length);
+    var all_len=this.size()-start;
+    if(all_len<0){
+        all_len=0;
+    }
+    length=(typeof length=="undefined"?all_len:length);
     var buf_len=Math.min(all_len,length);
     if(buf_len<=0){
-        return false;
+        return new Buffer(0);
     }
+    
     var buf=new Buffer(buf_len),offset=0,i;
     for(i=0;i<this._buffers.length;i++){
         pbuf=this._buffers[i];
