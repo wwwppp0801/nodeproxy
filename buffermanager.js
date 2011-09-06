@@ -34,6 +34,9 @@ BufferManager.prototype.add=function(buf){
         log.info("not a Buffer instance");
     }
 }
+BufferManager.prototype.clear=function(){
+    return this._buffers=[];
+}
 BufferManager.prototype.toBuffer=function(){
     return this.slice(0);
 }
