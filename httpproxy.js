@@ -32,9 +32,9 @@ function connectTo(socket,hostname,port){
 function create_remote_connecton(url) {
     var port = url.port?url.port:80;
     var hostname= url.hostname;
-    //socket = net.createConnection(port, hostname);
-    socket = new net.Socket();
-    connectTo(socket,hostname,port);
+    socket = net.createConnection(port, hostname);
+    //socket = new net.Socket();
+    //connectTo(socket,hostname,port);
     socket.on("connect", function() {
         log.info("connect successful: " + hostname + ":" + port);
     });
@@ -71,11 +71,12 @@ function clean_client_socket(socket) {
 
 function parse_local_request(bm){
     var CRLF_index=bm.indexOf(CRLF);
-    var http_header_length=bm.indexOf(CRLF+CRLF)+CRLF.length*2;
+    var http_header_length=bm.indexOf(CRLF+CRLF);
     if(CRLF_index==-1||http_header_length==-1){
         log.info("not enough request content");
         return null;
     }
+    http_header_length+=CRLF.length*2;
     var raw_header=bm.slice(0,http_header_length).toString();
     bm.clear();
     bm.add(bm.slice(http_header_length));
@@ -92,7 +93,12 @@ function parse_local_request(bm){
             return first_arr.join(" ")+header_rest.toString();
         },
         getUrl:function(){
-            return URL.parse(this.getQueryString());       
+            var queryStr=this.getQueryString();
+            log.info(queryStr);
+            if(!queryStr){
+                log.error(raw_header);
+            }
+            return URL.parse(queryStr);       
         }
     };
 }
