@@ -3,12 +3,13 @@ util=require("util");
 URL=require("url");
 DNS=require("dns");
 Logger = require("./log");
+log = new Logger(Logger.INFO);
 optparser = require("./optparser");
 BufferManager=require('./buffermanager').BufferManager;
-log = new Logger(Logger.INFO);
 
 CRLF = "\r\n";
-
+SERVER_CMD_START=[0x00,0x01];
+SERVER_CMD_END=[0xfe,0xff];
 DNSCache={};
 function connectTo(socket,hostname,port){
     if(net.isIP(hostname)){
@@ -32,9 +33,9 @@ function connectTo(socket,hostname,port){
 function create_remote_connecton(url) {
     var port = url.port?url.port:80;
     var hostname= url.hostname;
-    socket = net.createConnection(port, hostname);
-    //socket = new net.Socket();
-    //connectTo(socket,hostname,port);
+    //socket = net.createConnection(port, hostname);
+    socket = new net.Socket();
+    connectTo(socket,hostname,port);
     socket.on("connect", function() {
         log.info("connect successful: " + hostname + ":" + port);
     });
@@ -104,14 +105,57 @@ function parse_local_request(bm){
 }
 
 
-function parse_server_cmd(){
-    //TODO
-    return null;
+function parse_server_cmd(bm){
+    var start=bm.indexOf(SERVER_CMD_START),
+        end=bm.indexOf(SERVER_CMD_END);
+    if(start!=0 || end==-1){
+        return null;
+    }
+    var cmd=bm.slice(SERVER_CMD_START.length,end-SERVER_CMD_END.length).toString(),
+        rest=bm.slice(end+SERVER_CMD_END.length);
+    bm.clear();
+    bm.add(rest);
+    log.info('recieved server command:'+cmd);
+    return cmd;
 }
 
-function process_server_cmd(){
-    //TODO
-    return null;
+COMMAND_TABLE={
+    list:function(){
+         },
+    info:function(){
+         },
+    loadconf:function(){
+        },
+    dnsshow:function(){
+            return DNSCache;
+        },
+    dnsclean:function(){         
+            log.info('dnsclean');
+            DNSCache=[];
+            load_hosts();
+            return DNSCache;
+        }
+}
+
+function load_hosts(){
+    //TODO load file "hosts" to DNSCache
+}
+
+function process_server_cmd(cmd,socket){
+    var tokens=cmd.split(/\s+/);
+    var cmd_type=tokens[0].toLowerCase();
+    if(COMMAND_TABLE.hasOwnProperty(cmd_type)){
+        result=COMMAND_TABLE[cmd_type](tokens.slice(1));
+    }else{
+        log.error('not implement: "'+cmd+'"');
+        result='not implement';
+    }
+    var bm=new BufferManager(
+            new Buffer(SERVER_CMD_START),
+            new Buffer(JSON.stringify(result)),
+            new Buffer(SERVER_CMD_END)
+            );
+    socket.write(bm.toBuffer());
 }
 
 
@@ -130,8 +174,9 @@ function(socket) {
         bm.add(buf);
 
         var server_cmd=parse_server_cmd(bm);
+        log.info(server_cmd);
         if(server_cmd){
-            process_server_cmd(server_cmd);
+            process_server_cmd(server_cmd,this);
             return;
         }
         var request=parse_local_request(bm);

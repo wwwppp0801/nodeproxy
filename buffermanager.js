@@ -30,8 +30,8 @@ exports.BufferManager=BufferManager=function(){
 BufferManager.prototype.add=function(buf){
     if(Buffer.isBuffer(buf)){
         this._buffers.push(buf);
-    }else{
-        log.info("not a Buffer instance");
+    }else if(buf){
+        this._buffers.push(new Buffer(buf));
     }
 }
 BufferManager.prototype.clear=function(){
@@ -49,7 +49,11 @@ BufferManager.prototype.size=function(){
 BufferManager.prototype.indexOf=function(str,start){
     //return this.toBuffer().indexOf(str);
     start=(typeof start=='undefined')?0:start;
-    var indexBuf=new Buffer(str);
+    if(str instanceof Buffer){
+        var indexBuf=str;
+    }else{
+        var indexBuf=new Buffer(str);
+    }
     var all_len=this.size(),buf_num=this._buffers.length,str_len=indexBuf.length;
     var idx,buf_offset=0,offset=start,buf=this._buffers[buf_offset],str_offset=0;
     for (idx=start;idx<all_len;idx++){
