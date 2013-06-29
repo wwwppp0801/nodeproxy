@@ -77,8 +77,15 @@ function local_request(raw_header){
         getQueryString:(function(){
             var queryStr;
             return function(){
+                var tmp;
                 if(!queryStr){
                     queryStr=raw_header.substr(0,CRLF_index).split(/\s+/)[1];
+                }
+                if(tmp=queryStr.match(/^https?:\/\/[^/]*(.*)/)){
+                    queryStr=tmp[1];
+                }
+                if(!queryStr){
+                    queryStr="/";
                 }
                 return queryStr;
             }
@@ -109,10 +116,10 @@ function local_request(raw_header){
                     headers={};
                     header_rest.split(CRLF).forEach(function(line){
                         if(line){
-                            var tmp=line.split(":",2);
+                            var tmp=line.match(/([^:]*):(.*)/);
                         }
                         if(tmp){
-                            headers[tmp[0].trim()]=tmp[1].trim();
+                            headers[tmp[1].trim()]=tmp[2].trim();
                         }
                     });
                 }
@@ -124,13 +131,13 @@ function local_request(raw_header){
             };
         })(),
         getSendHeader:function(){
-            var headerStr="";
+            var tmp=[];
             var headers=this.getHeader();
             for(h in headers){
-                headerStr+=h+":"+headers[h]+CRLF;
+                tmp.push(h+":"+headers[h]);
             }
             return this.getMethod()+" "+this.getQueryString()+" HTTP/"+this.getHttpVersion()+CRLF+
-                headerStr+CRLF;
+                tmp.join(CRLF)+CRLF+CRLF;
         },
         getUrl:function(){
             var queryStr=this.getQueryString();
