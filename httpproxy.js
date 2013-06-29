@@ -69,7 +69,82 @@ function clean_client_socket(socket) {
     delete socket.remote_socket;
     socket.destroy();
 }
+function local_request(raw_header){
+    var CRLF_index=raw_header.indexOf(CRLF);
+    var http_header_length=raw_header.indexOf(CRLF+CRLF);
 
+    return {
+        getQueryString:(function(){
+            var queryStr;
+            return function(){
+                if(!queryStr){
+                    queryStr=raw_header.substr(0,CRLF_index).split(/\s+/)[1];
+                }
+                return queryStr;
+            }
+        })(),
+        getHttpVersion:(function(){
+            var version;
+            return function(){
+                if(!version){
+                    version=raw_header.substr(0,CRLF_index).split(/\s+/)[2]=='HTTP/1.0'?"1.0":"1.1";
+                }
+                return version;
+            };
+        })(),
+        getMethod:(function(){
+            var method;
+            return function(){
+                if(!method){
+                    method=raw_header.substr(0,CRLF_index).split(/\s+/)[0];
+                }
+                return method;
+            };
+        })(),
+        getHeader:(function(){
+            var headers;
+            return function (name){
+                if(!headers){
+                    var header_rest=raw_header.substr(raw_header.indexOf(CRLF)+CRLF.length,http_header_length);
+                    headers={};
+                    header_rest.split(CRLF).forEach(function(line){
+                        if(line){
+                            var tmp=line.split(":",2);
+                        }
+                        if(tmp){
+                            headers[tmp[0].trim()]=tmp[1].trim();
+                        }
+                    });
+                }
+                if(name){
+                    return headers[name];
+                }else{
+                    return headers;
+                }
+            };
+        })(),
+        getSendHeader:function(){
+            var headerStr="";
+            var headers=this.getHeader();
+            for(h in headers){
+                headerStr+=h+":"+headers[h]+CRLF;
+            }
+            return this.getMethod()+" "+this.getQueryString()+" HTTP/"+this.getHttpVersion()+CRLF+
+                headerStr+CRLF;
+        },
+        getUrl:function(){
+            var queryStr=this.getQueryString();
+            if(queryStr[0]=='/' && this.getHeader("Host")){
+                queryStr="http://"+this.getHeader("Host")+queryStr;
+            }
+            log.info(queryStr);
+            if(!queryStr){
+                log.error(raw_header);
+            }
+            return URL.parse(queryStr);       
+        }
+    };
+}
 function parse_local_request(bm){
     var CRLF_index=bm.indexOf(CRLF);
     var http_header_length=bm.indexOf(CRLF+CRLF);
@@ -79,29 +154,15 @@ function parse_local_request(bm){
     }
     http_header_length+=CRLF.length*2;
     var raw_header=bm.slice(0,http_header_length).toString();
+    
+    request=local_request(raw_header);
+    //TODO
+    //shold parse request body
+    
+    var rest=bm.slice(http_header_length);
     bm.clear();
-    bm.add(bm.slice(http_header_length));
-    return {
-        getQueryString:function(){
-            return raw_header.substr(0,CRLF_index).split(/\s+/)[1];
-        },
-        getSendHeader:function(){
-            var header_first=raw_header.substr(0,raw_header.indexOf(CRLF)+CRLF.length);
-            var header_rest=raw_header.substr(raw_header.indexOf(CRLF)+CRLF.length,http_header_length);
-            var first_arr=header_first.split(" ");
-            var url=URL.parse(first_arr[1]);
-            first_arr[1]=url.pathname+(typeof url.search=='undefined'?'':url.search);
-            return first_arr.join(" ")+header_rest.toString();
-        },
-        getUrl:function(){
-            var queryStr=this.getQueryString();
-            log.info(queryStr);
-            if(!queryStr){
-                log.error(raw_header);
-            }
-            return URL.parse(queryStr);       
-        }
-    };
+    bm.add(rest);
+    return request;
 }
 
 
@@ -162,10 +223,10 @@ function process_server_cmd(cmd,socket){
 server=net.createServer(
 function(socket) {
     socket.on("connect", function() {
-        log.debug("client in " + this.remoteAddress);
+        log.info("client in " + this.remoteAddress);
     });
     socket.on("data", function(buf) {
-        log.debug("recievied:\n"+buf.toString());
+        log.info("recievied:\n"+buf.toString());
         if(!this.bm){
             var bm=this.bm=new BufferManager();
         }else{
@@ -174,7 +235,9 @@ function(socket) {
         bm.add(buf);
 
         var server_cmd=parse_server_cmd(bm);
-        log.info(server_cmd);
+        if(server_cmd){
+            log.info(server_cmd);
+        }
         if(server_cmd){
             process_server_cmd(server_cmd,this);
             return;
@@ -207,7 +270,7 @@ function(socket) {
             try{
                 this.removeListener("connect",arguments.callee);
                 var header=request.getSendHeader();
-                log.debug("send:\n"+header);
+                log.info("send:\n"+header);
                 this.write(header);
             }catch(e){
                 throw e;
@@ -233,5 +296,5 @@ function process_request(header){
 }
 
 server.maxConnections=2000;
-server.listen('8080','127.0.0.1');
+server.listen('8083','127.0.0.1');
 
