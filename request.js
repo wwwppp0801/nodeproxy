@@ -1,9 +1,59 @@
 
-exports.local_request=local_request=function (raw_header){
-    var CRLF_index=raw_header.indexOf(CRLF);
-    var http_header_length=raw_header.indexOf(CRLF+CRLF);
+exports.local_request=local_request=function (bm){
+    var headers;
+    var CRLF_index=bm.indexOf(CRLF);
+    var http_header_length=bm.indexOf(CRLF+CRLF);
+    if(CRLF_index==-1||http_header_length==-1){
+        log.debug("not enough request content");
+        return null;
+    }
+    http_header_length+=CRLF.length*2;
+    var raw_header=bm.slice(0,http_header_length).toString();
+    var content_length=parseInt(getHeader("Content-Length"));
 
+    log.info("content_length:"+content_length);
+    log.info("http_header_length:"+http_header_length);
+    log.info("bm size:"+bm.size());
+    var body="";
+    if(typeof(getHeader("Content-Length"))!="undefined"){
+        if(content_length+http_header_length<=bm.size()){
+            var body=bm.slice(http_header_length,content_length);
+            var rest=bm.slice(http_header_length+content_length);
+            bm.clear();
+            bm.add(rest);
+        }else{
+            return null;
+        }
+    }else{
+        var rest=bm.slice(http_header_length);
+        bm.clear();
+        bm.add(rest);
+    }
+    
+    
+    function getHeader(name){
+        if(!headers){
+            var header_rest=raw_header.substr(raw_header.indexOf(CRLF)+CRLF.length,http_header_length);
+            headers={};
+            header_rest.split(CRLF).forEach(function(line){
+                if(line){
+                    var tmp=line.match(/([^:]*):(.*)/);
+                }
+                if(tmp){
+                    headers[tmp[1].trim()]=tmp[2].trim();
+                }
+            });
+        }
+        if(name){
+            return headers[name];
+        }else{
+            return headers;
+        }
+    }
     return {
+        getBody:function(){
+            return body;
+        },
         getQueryString:(function(){
             var queryStr;
             return function(){
@@ -38,28 +88,7 @@ exports.local_request=local_request=function (raw_header){
                 return method;
             };
         })(),
-        getHeader:(function(){
-            var headers;
-            return function (name){
-                if(!headers){
-                    var header_rest=raw_header.substr(raw_header.indexOf(CRLF)+CRLF.length,http_header_length);
-                    headers={};
-                    header_rest.split(CRLF).forEach(function(line){
-                        if(line){
-                            var tmp=line.match(/([^:]*):(.*)/);
-                        }
-                        if(tmp){
-                            headers[tmp[1].trim()]=tmp[2].trim();
-                        }
-                    });
-                }
-                if(name){
-                    return headers[name];
-                }else{
-                    return headers;
-                }
-            };
-        })(),
+        getHeader:getHeader,
         getSendHeader:function(){
             var tmp=[];
             var headers=this.getHeader();

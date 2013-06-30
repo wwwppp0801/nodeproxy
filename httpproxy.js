@@ -3,7 +3,7 @@ util=require("util");
 URL=require("url");
 DNS=require("dns");
 Logger = require("./log");
-log = new Logger(Logger.INFO);
+log = new Logger(Logger.DEBUG);
 optparser = require("./optparser");
 BufferManager=require('./buffermanager').BufferManager;
 local_request=require('./request').local_request;
@@ -73,9 +73,16 @@ function create_remote_connecton(request,socket) {
     //socket = net.createConnection(port, hostname);
     if(remote_socket=get_cached_remote_connection(url)){
         remote_socket.socket=socket;
-        var header=request.getSendHeader();
-        log.debug("send:\n"+header);
-        remote_socket.write(header);
+
+
+        var request_raw=request.getSendHeader()+request.getBody();
+        log.info("remote connection established");
+        log.info("send:\n"+request_raw);
+        remote_socket.write(request_raw);
+
+        //var header=request.getSendHeader();
+        //log.debug("send:\n"+header);
+        //remote_socket.write(header);
         return remote_socket;
     }
     remote_socket = new net.Socket();
@@ -132,10 +139,10 @@ function create_remote_connecton(request,socket) {
         this.is_connected=true;
         try{
             this.removeListener("connect",arguments.callee);
-            var header=request.getSendHeader();
+            var request_raw=request.getSendHeader()+request.getBody();
             log.info("remote connection established");
-            log.debug("send:\n"+header);
-            this.write(header);
+            log.info("send:\n"+request_raw);
+            this.write(request_raw);
         }catch(e){
             throw e;
         }
@@ -164,25 +171,6 @@ function clean_client_socket(socket) {
     delete socket.remote_socket;
     socket.end();
     socket.destroy();
-}
-function parse_local_request(bm){
-    var CRLF_index=bm.indexOf(CRLF);
-    var http_header_length=bm.indexOf(CRLF+CRLF);
-    if(CRLF_index==-1||http_header_length==-1){
-        log.debug("not enough request content");
-        return null;
-    }
-    http_header_length+=CRLF.length*2;
-    var raw_header=bm.slice(0,http_header_length).toString();
-    
-    var request=local_request(raw_header);
-    //TODO
-    //should parse request body
-    
-    var rest=bm.slice(http_header_length);
-    bm.clear();
-    bm.add(rest);
-    return request;
 }
 
 function parse_remote_response(bm){
@@ -285,9 +273,9 @@ function(socket) {
             process_server_cmd(server_cmd,this);
             return;
         }
-        var request=parse_local_request(bm);
+        var request=local_request(bm);
         if(request===null){
-            log.error(bm.toBuffer().toString());
+            log.info("not full request");
             return;
         }
 
