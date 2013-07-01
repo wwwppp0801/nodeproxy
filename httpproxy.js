@@ -13,6 +13,7 @@ CRLF = "\r\n";
 SERVER_CMD_START=[0x00,0x01];
 SERVER_CMD_END=[0xfe,0xff];
 DNSCache={};
+DNSCache['www.baidu.com']={addresses:['127.0.0.1']};
 function connectTo(socket,hostname,port){
     if(net.isIP(hostname)){
         socket.connect(port,hostname);
@@ -53,7 +54,7 @@ function release_connection(remote_socket){
     log.info("release keepalive connection: "+key);
     remote_connection_pool[key].push(remote_socket);
 }
-function delete_from_connection(remote_socket){
+function delete_from_connection_pool(remote_socket){
     var k,i,tmp;
     for(k in remote_connection_pool){
         tmp=[];
@@ -76,24 +77,23 @@ function create_remote_connecton(request,socket) {
     //socket = net.createConnection(port, hostname);
     if(remote_socket=get_cached_remote_connection(url)){
         remote_socket.socket=socket;
-
-
-        var request_raw=request.getSendHeader()+request.getBody();
-        log.info("remote connection established");
-        log.info("send:\n"+request_raw);
-        remote_socket.write(request_raw);
-
-        //var header=request.getSendHeader();
-        //log.debug("send:\n"+header);
-        //remote_socket.write(header);
-        return remote_socket;
+        try{
+            var request_raw=request.getSendHeader()+request.getBody();
+            log.info("remote connection established");
+            log.info("send:\n"+request_raw);
+            remote_socket.write(request_raw);
+            log.info("write to cached connection:"+hostname+":port");
+            return remote_socket;
+        }catch(e){
+            log.error("can't write to cached connection");
+        }
     }
     remote_socket = new net.Socket();
     remote_socket.socket=socket;
     try{
         connectTo(remote_socket,hostname,port);
     }catch(e){
-        log.error(e)
+        log.error("remote connection fail:"+e)
     }
     remote_socket.url=url;
     remote_socket.on("connect", function() {
@@ -101,9 +101,7 @@ function create_remote_connecton(request,socket) {
     });
 
     remote_socket.on("error", function(e) {
-        log.error("connection error: " + hostname + ":" + port);
-        log.error(e);
-        delete_from_connection(this);
+        log.error("connection error: " + hostname + ":" + port+"  "+e);
         clean_remote_socket(this);
         clean_client_socket(this.socket);
     });
@@ -134,7 +132,6 @@ function create_remote_connecton(request,socket) {
         if (had_error) {
             this.destroy();
         }
-        delete_from_connection(this);
         clean_remote_socket(this);
         clean_client_socket(this.socket);
     });
@@ -154,6 +151,7 @@ function create_remote_connecton(request,socket) {
 }
 
 function clean_remote_socket(socket) {
+    delete_from_connection_pool(this);
     if(!socket){
         return;
     }
@@ -181,8 +179,8 @@ function clean_client_socket(socket) {
     delete socket.bm;
     if(socket.remote_socket){
         clean_remote_socket(socket);
+        delete socket.remote_socket;
     }
-    delete socket.remote_socket;
     socket.end();
     socket.destroy();
 }

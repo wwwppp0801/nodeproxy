@@ -43,6 +43,7 @@ exports.remote_response=remote_response=function (raw_header){
             if(Connection=="keep-alive"){
                 return true;
             }
+            return false;
             if(Connection=='close'){
                 return false;
             }
