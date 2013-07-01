@@ -3,7 +3,7 @@ util=require("util");
 URL=require("url");
 DNS=require("dns");
 Logger = require("./log");
-log = new Logger(Logger.DEBUG);
+log = new Logger(Logger.INFO);
 optparser = require("./optparser");
 BufferManager=require('./buffermanager').BufferManager;
 local_request=require('./request').local_request;
@@ -23,7 +23,10 @@ function connectTo(socket,hostname,port){
         }else{
             DNS.resolve4(hostname,function(err,addresses){
                 if (err) {
-                    throw err;
+                    //throw new Error(hostname+" can't be resolved to ip");
+                    //close remote socket
+                    //clean_remote_socket(socket);
+                    return;
                 }
                 DNSCache[hostname]={addresses:addresses};
                 socket.connect(port,addresses[0]);
@@ -102,6 +105,7 @@ function create_remote_connecton(request,socket) {
         log.error(e);
         delete_from_connection(this);
         clean_remote_socket(this);
+        clean_client_socket(this.socket);
     });
     var response;
     remote_socket.on('data',function(buf){
@@ -112,7 +116,6 @@ function create_remote_connecton(request,socket) {
         try{
             this.socket.write(buf);
             bm.add(buf);
-            //log.info(buf);
         }catch(e){
             this.destroy();
             this.socket.destroy();
@@ -151,15 +154,26 @@ function create_remote_connecton(request,socket) {
 }
 
 function clean_remote_socket(socket) {
+    if(!socket){
+        return;
+    }
     socket.removeAllListeners("data");
     socket.removeAllListeners("error");
     socket.removeAllListeners("close");
     socket.removeAllListeners("connect");
     delete socket.bm;
+    if(socket.socket){
+        clean_client_socket(socket.socket);
+        delete socket.socket;
+    }
+    socket.end();
     socket.destroy();
 }
 
 function clean_client_socket(socket) {
+    if(!socket){
+        return;
+    }
     socket.removeAllListeners("data");
     socket.removeAllListeners("error");
     socket.removeAllListeners("close");
@@ -281,14 +295,14 @@ function(socket) {
 
         var remote_socket=this.remote_socket=create_remote_connecton(request,socket);
     });
-    /*
+    
     socket.on("close", function() {
         clean_client_socket(this);
         log.info("local connection closed: " + this.remoteAddress);
-    });*/
+    });
     socket.on("error", function() {
         clean_client_socket(this);
-        log.notice("client error");
+        log.error("client error");
     });
 });
 

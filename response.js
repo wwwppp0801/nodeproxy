@@ -1,5 +1,5 @@
 Logger = require("./log");
-log = new Logger(Logger.INFO);
+log = new Logger(Logger.ERROR);
 
 exports.remote_response=remote_response=function (raw_header){
     var CRLF_index=raw_header.indexOf(CRLF);
