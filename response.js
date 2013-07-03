@@ -1,6 +1,5 @@
 Logger = require("./log");
 log = new Logger(Logger.INFO);
-
 exports.remote_response=remote_response=function (raw_header){
     var CRLF_index=raw_header.indexOf(CRLF);
     var http_header_length=raw_header.indexOf(CRLF+CRLF);
@@ -49,14 +48,39 @@ exports.remote_response=remote_response=function (raw_header){
             return this.getHttpVersion()=='1.1';
         },
         responseIsEnd:function(bm){
+            ///chunked
+            var end,start=0,hexLen,len;
             if(this.getHeader("Transfer-Encoding")=='chunked'){
-                //TODO
+                while(true){
+                    end=bm.indexOf(CRLF,start);
+                    hexLen=bm.slice(start,end-start);
+                    len=parseInt(hexLen,"16");
+                    log.info("chunk len "+hexLen+" : "+len);
+                    start+=CRLF.length*4+len;
+                    if(!len){
+                        break;
+                    }
+                    if(bm.size()<start){
+                        return false;
+                    }
+                    log.info("chunk recieved "+start+" : "+len+" : "+bm.size());
+                }
+                if(len==0&&bm.indexOf(CRLF,start)){
+                    log.info("chunk over");
+                    bm.clear();
+                    return true;
+                }
+
                 return false;
             }
-            log.info("content length:"+ this.getHeader("Content-Length")+"\t"+bm.size());
+            ///content length
             var content_length=this.getHeader("Content-Length");
-            if(typeof(content_length)!='undefined' && content_length<=bm.size()){
-                return true;
+            if(typeof(content_length)!='undefined'){
+                log.info("content length:"+ content_length+"\t"+bm.size());
+                if(content_length<=bm.size()){
+                    bm.clear();
+                    return true;
+                }
             }
             return false;
         }
