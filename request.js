@@ -1,3 +1,5 @@
+Logger = require("./log");
+log = new Logger(Logger.ERROR);
 
 exports.local_request=local_request=function (bm){
     var headers;
