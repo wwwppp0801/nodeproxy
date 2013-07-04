@@ -1,5 +1,3 @@
-Logger = require("./log");
-log = new Logger(Logger.INFO);
 exports.remote_response=remote_response=function (raw_header){
     var CRLF_index=raw_header.indexOf(CRLF);
     var http_header_length=raw_header.indexOf(CRLF+CRLF);
@@ -57,7 +55,7 @@ exports.remote_response=remote_response=function (raw_header){
                     hexLen=bm.slice(start,end-start);
                     len=parseInt(hexLen,"16");
                     log.info("chunk len "+hexLen+" : "+len);
-                    start+=CRLF.length*4+len;
+                    start+=hexLen.length+len+CRLF.length*2;
                     if(!len){
                         break;
                     }
