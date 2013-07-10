@@ -133,7 +133,6 @@ function create_remote_connecton(request,socket) {
             response=false;
             return;
         }
-        log.info("recv response:"+response.getResponseCode());
         if(response 
             && response.isKeepAlive()
             && response.responseIsEnd(bm) 
