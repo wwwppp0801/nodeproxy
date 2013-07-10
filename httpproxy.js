@@ -3,7 +3,7 @@ util=require("util");
 URL=require("url");
 DNS=require("dns");
 Logger = require("./log");
-log = new Logger(Logger.DEBUG);
+log = new Logger(Logger.ERROR);
 optparser = require("./optparser");
 BufferManager=require('./buffermanager').BufferManager;
 local_request=require('./request').local_request;
@@ -88,6 +88,7 @@ function create_remote_connecton(request,socket) {
             log.info("write to cached connection:"+hostname+":port");
             return remote_socket;
         }catch(e){
+            clean_remote_socket(remote_socket);
             log.error("can't write to cached connection");
         }
     }
@@ -167,22 +168,23 @@ function create_remote_connecton(request,socket) {
     return remote_socket;
 }
 
-function clean_remote_socket(socket) {
-    delete_from_connection_pool(this);
-    if(!socket){
+function clean_remote_socket(remote_socket) {
+    delete_from_connection_pool(remote_socket);
+    if(!remote_socket){
         return;
     }
-    socket.removeAllListeners("data");
-    socket.removeAllListeners("error");
-    socket.removeAllListeners("close");
-    socket.removeAllListeners("connect");
-    delete socket.bm;
-    if(socket.socket){
-        clean_client_socket(socket.socket);
-        delete socket.socket;
+    remote_socket.removeAllListeners("data");
+    remote_socket.removeAllListeners("error");
+    remote_socket.removeAllListeners("close");
+    remote_socket.removeAllListeners("connect");
+    delete remote_socket.bm;
+    if(remote_socket.socket){
+        delete remote_socket.socket.remote_socket;
+        clean_client_socket(remote_socket.socket);
+        delete remote_socket.socket;
     }
-    socket.end();
-    socket.destroy();
+    remote_socket.end();
+    remote_socket.destroy();
 }
 
 function clean_client_socket(socket) {
@@ -195,7 +197,8 @@ function clean_client_socket(socket) {
     socket.removeAllListeners("connect");
     delete socket.bm;
     if(socket.remote_socket){
-        clean_remote_socket(socket);
+        delete socket.remote_socket.socket;
+        clean_remote_socket(socket.remote_socket);
         delete socket.remote_socket;
     }
     socket.end();
@@ -325,6 +328,6 @@ function process_request(header){
     return header;
 }
 
-server.maxConnections=100;
+server.maxConnections=1000;
 server.listen('8083','127.0.0.1');
 
