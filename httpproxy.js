@@ -3,7 +3,7 @@ util=require("util");
 URL=require("url");
 DNS=require("dns");
 Logger = require("./log");
-log = new Logger(Logger.ERROR);
+log = new Logger(Logger.DEBUG);
 optparser = require("./optparser");
 BufferManager=require('./buffermanager').BufferManager;
 local_request=require('./request').local_request;
@@ -78,10 +78,13 @@ function create_remote_connecton(request,socket) {
     if(remote_socket=get_cached_remote_connection(url)){
         remote_socket.socket=socket;
         try{
-            var request_raw=request.getSendHeader()+request.getBody();
+            //var request_raw=request.getSendHeader()+request.getBody();
+            // 这个是错的，string 和 buffer相加，如果发送2进制数据就会出错！
             log.info("remote connection established");
             log.info("send:\n"+request_raw);
-            remote_socket.write(request_raw);
+            //remote_socket.write(request_raw);
+            remote_socket.write(request.getSendHeader());
+            remote_socket.write(request.getBody());
             log.info("write to cached connection:"+hostname+":port");
             return remote_socket;
         }catch(e){
@@ -107,6 +110,7 @@ function create_remote_connecton(request,socket) {
     });
     var response;
     remote_socket.on('data',function(buf){
+        log.info("recv remote data length:"+buf.length);
         if(!this.bm){
             this.bm=new BufferManager();
         }
@@ -121,7 +125,20 @@ function create_remote_connecton(request,socket) {
         if(!response){
             response=parse_remote_response(bm);
         }
-        if(response && response.isKeepAlive() && response.responseIsEnd(bm)){
+        if(response 
+            && response.getResponseCode()<200//100－199都是报状态的，响应还没结束
+            && response.getResponseCode()>=100
+            ){
+            log.info("recv 1xx response:"+response.getResponseCode());
+            response=false;
+            return;
+        }
+        log.info("recv response:"+response.getResponseCode());
+        if(response 
+            && response.isKeepAlive()
+            && response.responseIsEnd(bm) 
+            ){
+            log.info("response end:"+response.getResponseCode());
             release_connection(this);
             response=false;
             delete this.bm;
@@ -139,10 +156,11 @@ function create_remote_connecton(request,socket) {
         this.is_connected=true;
         try{
             this.removeListener("connect",arguments.callee);
-            var request_raw=request.getSendHeader()+request.getBody();
+            //var request_raw=request.getSendHeader()+request.getBody();
             log.info("remote connection established");
-            log.info("send:\n"+request_raw);
-            this.write(request_raw);
+            log.info("send:\n"+request.getSendHeader());
+            this.write(request.getSendHeader());
+            this.write(request.getBody());
         }catch(e){
             throw e;
         }
@@ -269,7 +287,7 @@ function(socket) {
         //log.debug("client end " + this.remoteAddress);
     });
     socket.on("data", function(buf) {
-        log.debug("recievied:\n"+buf.toString());
+        log.info("recievied local length:\n"+buf.length);
         if(!this.bm){
             var bm=this.bm=new BufferManager();
         }else{
@@ -308,6 +326,6 @@ function process_request(header){
     return header;
 }
 
-server.maxConnections=2000;
+server.maxConnections=100;
 server.listen('8083','127.0.0.1');
 

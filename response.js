@@ -4,7 +4,7 @@ exports.remote_response=remote_response=function (raw_header){
 //HTTP/1.1 200 OK
     
     var tmp=raw_header.substr(0,CRLF_index).split(/\s+/);
-    var code=tmp[1];
+    var code=parseInt(tmp[1],10);
     var version=tmp[0]=='HTTP/1.0'?"1.0":"1.1";
     return {
         getResponseCode:function(){
@@ -69,7 +69,6 @@ exports.remote_response=remote_response=function (raw_header){
                     bm.clear();
                     return true;
                 }
-
                 return false;
             }
             ///content length
