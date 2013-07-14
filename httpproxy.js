@@ -3,7 +3,7 @@ util=require("util");
 URL=require("url");
 DNS=require("dns");
 Logger = require("./log");
-log = new Logger(Logger.ERROR);
+log = new Logger(Logger.INFO);
 optparser = require("./optparser");
 BufferManager=require('./buffermanager').BufferManager;
 local_request=require('./request').local_request;
@@ -124,7 +124,7 @@ function create_remote_connecton(request,socket) {
             this.socket.destroy();
         }
         if(!response){
-            response=parse_remote_response(bm);
+            response=remote_response(bm);
         }
         if(response 
             && response.getResponseCode()<200//100－199都是报状态的，响应还没结束
@@ -205,23 +205,6 @@ function clean_client_socket(socket) {
     socket.destroy();
 }
 
-function parse_remote_response(bm){
-    var CRLF_index=bm.indexOf(CRLF);
-    var http_header_length=bm.indexOf(CRLF+CRLF);
-    if(CRLF_index==-1||http_header_length==-1){
-        log.debug("not enough response content");
-        return null;
-    }
-    http_header_length+=CRLF.length*2;
-    var raw_header=bm.slice(0,http_header_length).toString();
-    
-    var response=remote_response(raw_header);
-    
-    var rest=bm.slice(http_header_length);
-    bm.clear();
-    bm.add(rest);
-    return response;
-}
 
 
 function parse_server_cmd(bm){
@@ -230,10 +213,8 @@ function parse_server_cmd(bm){
     if(start!=0 || end==-1){
         return null;
     }
-    var cmd=bm.slice(SERVER_CMD_START.length,end-SERVER_CMD_END.length).toString(),
-        rest=bm.slice(end+SERVER_CMD_END.length);
-    bm.clear();
-    bm.add(rest);
+    var cmd=bm.slice(SERVER_CMD_START.length,end-SERVER_CMD_END.length).toString();
+    bm.delete(end+SERVER_CMD_END.length);
     log.debug('recieved server command:'+cmd);
     return cmd;
 }

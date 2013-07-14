@@ -18,16 +18,12 @@ exports.local_request=local_request=function (bm){
     if(typeof(getHeader("Content-Length"))!="undefined"){
         if(content_length+http_header_length<=bm.size()){
             var body=bm.slice(http_header_length,content_length);
-            var rest=bm.slice(http_header_length+content_length);
-            bm.clear();
-            bm.add(rest);
+            bm.delete(http_header_length+content_length);
         }else{
             return null;
         }
     }else{
-        var rest=bm.slice(http_header_length);
-        bm.clear();
-        bm.add(rest);
+        bm.delete(http_header_length);
     }
     
     

@@ -84,6 +84,11 @@ BufferManager.prototype.indexOf=function(str,start){
 
     return -1;
 }
+BufferManager.prototype.delete=function(length){
+    var rest=this.slice(length);
+    this.clear();
+    this.add(rest);
+}
 BufferManager.prototype.slice=function(start,length){
     var all_len=this.size()-start;
     if(all_len<0){

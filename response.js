@@ -1,6 +1,16 @@
-exports.remote_response=remote_response=function (raw_header){
-    var CRLF_index=raw_header.indexOf(CRLF);
-    var http_header_length=raw_header.indexOf(CRLF+CRLF);
+exports.remote_response=remote_response=function (bm){
+
+    var CRLF_index=bm.indexOf(CRLF);
+    var http_header_length=bm.indexOf(CRLF+CRLF);
+    if(CRLF_index==-1||http_header_length==-1){
+        log.debug("not enough response content");
+        return null;
+    }
+    http_header_length+=CRLF.length*2;
+    var raw_header=bm.slice(0,http_header_length).toString();
+    bm.delete(http_header_length);
+
+
 //HTTP/1.1 200 OK
     
     var tmp=raw_header.substr(0,CRLF_index).split(/\s+/);
