@@ -13,7 +13,8 @@ CRLF = "\r\n";
 SERVER_CMD_START=[0x00,0x01];
 SERVER_CMD_END=[0xfe,0xff];
 DNSCache={};
-DNSCache['www.baidu.com']={addresses:['127.0.0.1']};
+//DNSCache['www.baidu.com']={addresses:['127.0.0.1']};
+DNSCache['aimei1.wangp.org']={addresses:['127.0.0.1']};
 function connectTo(socket,hostname,port){
     if(net.isIP(hostname)){
         socket.connect(port,hostname);
@@ -81,7 +82,7 @@ function create_remote_connecton(request,socket) {
             //var request_raw=request.getSendHeader()+request.getBody();
             // 这个是错的，string 和 buffer相加，如果发送2进制数据就会出错！
             log.info("remote connection established");
-            log.info("send:\n"+request_raw);
+            //log.info("send:\n"+request_raw);
             //remote_socket.write(request_raw);
             remote_socket.write(request.getSendHeader());
             remote_socket.write(request.getBody());
