@@ -11,9 +11,9 @@ exports.local_request=local_request=function (bm){
     var raw_header=bm.slice(0,http_header_length).toString();
     var content_length=parseInt(getHeader("Content-Length"));
 
-    log.info("content_length:"+content_length);
-    log.info("http_header_length:"+http_header_length);
-    log.info("bm size:"+bm.size());
+    log.debug("content_length:"+content_length);
+    log.debug("http_header_length:"+http_header_length);
+    log.debug("bm size:"+bm.size());
     var body="";
     if(typeof(getHeader("Content-Length"))!="undefined"){
         if(content_length+http_header_length<=bm.size()){

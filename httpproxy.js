@@ -8,6 +8,7 @@ optparser = require("./optparser");
 BufferManager=require('./buffermanager').BufferManager;
 local_request=require('./request').local_request;
 remote_response=require('./response').remote_response;
+var fs = require('fs');
 
 CRLF = "\r\n";
 SERVER_CMD_START=[0x00,0x01];
@@ -42,7 +43,7 @@ function get_cached_remote_connection(url){
     if(!remote_connection_pool[key]){
         return false;
     }else{
-        log.info("re use keepalive connection: "+key);
+        log.debug("re use keepalive connection: "+key);
         return remote_connection_pool[key].pop();
     }
 }
@@ -52,7 +53,7 @@ function release_connection(remote_socket){
     if(typeof(remote_connection_pool[key])=='undefined'){
         remote_connection_pool[key]=[];
     }
-    log.info("release keepalive connection: "+key);
+    log.debug("release keepalive connection: "+key);
     remote_connection_pool[key].push(remote_socket);
 }
 function delete_from_connection_pool(remote_socket){
@@ -63,7 +64,7 @@ function delete_from_connection_pool(remote_socket){
             if(remote_connection_pool[k][i]!==remote_socket){
                 tmp.push(remote_connection_pool[k][i]);
             }else{
-                log.info("delete remote connection from pool");
+                log.debug("delete remote connection from pool");
             }
         }
         remote_connection_pool[k]=tmp;
@@ -81,12 +82,12 @@ function create_remote_connecton(request,socket) {
         try{
             //var request_raw=request.getSendHeader()+request.getBody();
             // 这个是错的，string 和 buffer相加，如果发送2进制数据就会出错！
-            log.info("remote connection established");
+            log.debug("remote connection established");
             //log.info("send:\n"+request_raw);
             //remote_socket.write(request_raw);
             remote_socket.write(request.getSendHeader());
             remote_socket.write(request.getBody());
-            log.info("write to cached connection:"+hostname+":port");
+            log.debug("write to cached connection:"+hostname+":port");
             return remote_socket;
         }catch(e){
             clean_remote_socket(remote_socket);
@@ -112,7 +113,7 @@ function create_remote_connecton(request,socket) {
     });
     var response;
     remote_socket.on('data',function(buf){
-        log.info("recv remote data length:"+buf.length);
+        log.debug("recv remote data length:"+buf.length);
         if(!this.bm){
             this.bm=new BufferManager();
         }
@@ -131,7 +132,7 @@ function create_remote_connecton(request,socket) {
             && response.getResponseCode()<200//100－199都是报状态的，响应还没结束
             && response.getResponseCode()>=100
             ){
-            log.info("recv 1xx response:"+response.getResponseCode());
+            log.debug("recv 1xx response:"+response.getResponseCode());
             response=false;
             return;
         }
@@ -139,14 +140,14 @@ function create_remote_connecton(request,socket) {
             && response.isKeepAlive()
             && response.responseIsEnd(bm) 
             ){
-            log.info("response end:"+response.getResponseCode());
+            log.debug("response end:"+response.getResponseCode());
             release_connection(this);
             response=false;
             delete this.bm;
         }
     });
     remote_socket.on("close",function(had_error){
-        log.info("remote connection has been closed");
+        log.debug("remote connection has been closed");
         if (had_error) {
             this.destroy();
         }
@@ -158,8 +159,8 @@ function create_remote_connecton(request,socket) {
         try{
             this.removeListener("connect",arguments.callee);
             //var request_raw=request.getSendHeader()+request.getBody();
-            log.info("remote connection established");
-            log.info("send:\n"+request.getSendHeader());
+            log.debug("remote connection established");
+            log.debug("send:\n"+request.getSendHeader());
             this.write(request.getSendHeader());
             this.write(request.getBody());
         }catch(e){
@@ -263,15 +264,15 @@ function process_server_cmd(cmd,socket){
 server=net.createServer(
 function(socket) {
     //socket.on("connect", function() {
-    log.info("local connection established: " + socket.remoteAddress);
+    log.debug("local connection established: " + socket.remoteAddress);
     //});
     socket.on("end", function() {
-        log.info("local connection closed: " + this.remoteAddress);
+        log.debug("local connection closed: " + this.remoteAddress);
         clean_client_socket(this);
         //log.debug("client end " + this.remoteAddress);
     });
     socket.on("data", function(buf) {
-        log.info("recievied local length:\n"+buf.length);
+        log.debug("recievied local length:\n"+buf.length);
         if(!this.bm){
             var bm=this.bm=new BufferManager();
         }else{
@@ -289,8 +290,14 @@ function(socket) {
         }
         var request=local_request(bm);
         if(request===null){
-            log.info("not full request");
+            log.debug("not full request");
             return;
+        }
+
+        if(request){
+            if(matchAutoResponder(request,socket)===true){
+                return;
+            }
         }
 
         var remote_socket=this.remote_socket=create_remote_connecton(request,socket);
@@ -298,13 +305,33 @@ function(socket) {
     
     socket.on("close", function() {
         clean_client_socket(this);
-        log.info("local connection closed: " + this.remoteAddress);
+        log.debug("local connection closed: " + this.remoteAddress);
     });
     socket.on("error", function() {
         clean_client_socket(this);
         log.error("client error");
     });
 });
+
+function matchAutoResponder(request,socket){
+    var map={'http://www.baidu.com/':'test.html'};   
+    var url=request.getUrl();
+    log.info(url.href);
+    var filename=map[url.href];
+    if(filename){
+        var stat=fs.lstatSync(filename);
+        socket.write(['HTTP/1.1 200 OK',
+                'Content-Type: text/html',
+                'Cache-Control: private',
+                'Content-Length: '+stat.size].join(CRLF)+CRLF+CRLF);
+
+        fs.readFile(filename,function(err,data){
+            if (err) throw err;
+            socket.write(data);
+        });
+        return true;
+    }
+}
 
 function process_request(header){
     return header;

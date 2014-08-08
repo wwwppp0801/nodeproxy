@@ -64,7 +64,7 @@ exports.remote_response=remote_response=function (bm){
                     end=bm.indexOf(CRLF,start);
                     hexLen=bm.slice(start,end-start);
                     len=parseInt(hexLen,"16");
-                    log.info("chunk len "+hexLen+" : "+len);
+                    log.debug("chunk len "+hexLen+" : "+len);
                     start+=hexLen.length+len+CRLF.length*2;
                     if(!len){
                         break;
@@ -72,10 +72,10 @@ exports.remote_response=remote_response=function (bm){
                     if(bm.size()<start){
                         return false;
                     }
-                    log.info("chunk recieved "+start+" : "+len+" : "+bm.size());
+                    log.debug("chunk recieved "+start+" : "+len+" : "+bm.size());
                 }
                 if(len==0&&bm.indexOf(CRLF,start)){
-                    log.info("chunk over");
+                    log.debug("chunk over");
                     bm.clear();
                     return true;
                 }
@@ -84,7 +84,7 @@ exports.remote_response=remote_response=function (bm){
             ///content length
             var content_length=this.getHeader("Content-Length");
             if(typeof(content_length)!='undefined'){
-                log.info("content length:"+ content_length+"\t"+bm.size());
+                log.debug("content length:"+ content_length+"\t"+bm.size());
                 if(content_length<=bm.size()){
                     bm.clear();
                     return true;
