@@ -107,3 +107,18 @@ function process_request(socket,request){
 memcache协议中文版：http://www.ccvita.com/306
 node.js文档：http://nodejs.org/docs/v0.4.7/api
 
+# 使用方法
+- 启动几个memcached实例
+```bash
+#!/bin/sh
+for i in $(seq 0 4);do
+    memcached -d -p 1122$i -m 10
+done
+```
+- 启动nodeproxy.js 
+  - 指定后端服务的ip和端口(逗号分隔，如-b -s 127.0.0.1:11210,127.0.0.1:11211,127.0.0.1:11212,127.0.0.1:11213,127.0.0.1:11214)
+  - 指定监听ip和端口(如-b 127.0.0.1 -p 11111)
+  - 指定每个memcache的最大连接数(如-n 5)
+```
+node nodeproxy.js -s 127.0.0.1:11210,127.0.0.1:11211,127.0.0.1:11212,127.0.0.1:11213,127.0.0.1:11214
+```
