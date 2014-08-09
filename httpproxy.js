@@ -17,7 +17,12 @@ SERVER_CMD_START=[0x00,0x01];
 SERVER_CMD_END=[0xfe,0xff];
 DNSCache={};
 //DNSCache['www.baidu.com']={addresses:['127.0.0.1']};
-DNSCache['aimei1.wangp.org']={addresses:['127.0.0.1']};
+(function(){
+    config.hosts.forEach(function(host){
+        DNSCache[host[0]]={addresses:[host[1]]};
+    });
+})();
+
 function connectTo(socket,hostname,port){
     if(net.isIP(hostname)){
         socket.connect(port,hostname);
