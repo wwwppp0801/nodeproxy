@@ -335,7 +335,19 @@ function matchAutoResponder(request,socket){
     }
 
     if(filename){
-        var stat=fs.lstatSync(filename);
+        var stat;
+        try{
+            stat=fs.lstatSync(filename);
+        }catch(e){
+            log.error("stat error:"+e);
+        }
+        if(!stat){
+            return;
+        }
+        if(!stat.isFile()){
+            log.error("file:'"+filename+"' is not file");
+            return;
+        }
         socket.write(['HTTP/1.1 200 OK',
                 'Content-Type: '+get_content_type(filename),
                 'Cache-Control: private',
