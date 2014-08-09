@@ -9,6 +9,8 @@ BufferManager=require('./buffermanager').BufferManager;
 local_request=require('./request').local_request;
 remote_response=require('./response').remote_response;
 var fs = require('fs');
+var get_content_type=require("./content_type").get;
+var config=require("./config");
 
 CRLF = "\r\n";
 SERVER_CMD_START=[0x00,0x01];
@@ -295,6 +297,7 @@ function(socket) {
         }
 
         if(request){
+            log.info("recieve:"+request.getUrl().href);
             if(matchAutoResponder(request,socket)===true){
                 return;
             }
@@ -314,14 +317,27 @@ function(socket) {
 });
 
 function matchAutoResponder(request,socket){
-    var map={'http://www.baidu.com/':'test.html'};   
+    var rules=config.auto_responder;   
     var url=request.getUrl();
-    log.info(url.href);
-    var filename=map[url.href];
+    //log.info(url.href);
+    var filename;
+    var i;
+    for(i=0;i<rules.length;i++){
+        var rule=rules[i];
+        if(rule[0]===url.href){
+            filename=rule[1];
+            break;
+        }
+        if(rule[0] instanceof RegExp && url.href.match(rule[0])){
+            filename=rule[1];
+            break;
+        }
+    }
+
     if(filename){
         var stat=fs.lstatSync(filename);
         socket.write(['HTTP/1.1 200 OK',
-                'Content-Type: text/html',
+                'Content-Type: '+get_content_type(filename),
                 'Cache-Control: private',
                 'Content-Length: '+stat.size].join(CRLF)+CRLF+CRLF);
 
@@ -333,9 +349,6 @@ function matchAutoResponder(request,socket){
     }
 }
 
-function process_request(header){
-    return header;
-}
 
 server.maxConnections=1000;
 server.listen('8083','127.0.0.1');
