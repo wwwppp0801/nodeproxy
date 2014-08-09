@@ -1,6 +1,5 @@
 var config={
     'hosts':[
-        ['aimei1.wangp.org','127.0.0.1'],
 //        ['www.baidu.com','127.0.0.1'],
     ],
     'auto_responder':[
