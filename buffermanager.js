@@ -31,7 +31,7 @@ BufferManager.prototype.add=function(buf){
     if(Buffer.isBuffer(buf)){
         this._buffers.push(buf);
     }else if(buf){
-        this._buffers.push(new Buffer(buf));
+        this._buffers.push(Buffer.from(buf));
     }
 }
 BufferManager.prototype.clear=function(){
@@ -52,7 +52,7 @@ BufferManager.prototype.indexOf=function(str,start){
     if(str instanceof Buffer){
         var indexBuf=str;
     }else{
-        var indexBuf=new Buffer(str);
+        var indexBuf=Buffer.from(str);
     }
     var all_len=this.size(),buf_num=this._buffers.length,str_len=indexBuf.length;
     var idx,buf_offset=0,offset=start,buf=this._buffers[buf_offset],str_offset=0;
@@ -97,10 +97,10 @@ BufferManager.prototype.slice=function(start,length){
     length=(typeof length=="undefined"?all_len:length);
     var buf_len=Math.min(all_len,length);
     if(buf_len<=0){
-        return new Buffer(0);
+        return Buffer.alloc(0);
     }
     
-    var buf=new Buffer(buf_len),offset=0,i;
+    var buf=Buffer.alloc(buf_len),offset=0,i;
     for(i=0;i<this._buffers.length;i++){
         pbuf=this._buffers[i];
         if(pbuf.length>start){

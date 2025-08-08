@@ -24,7 +24,8 @@
  */
 
 var tcp = require('net'),
-    sys = require('sys');
+    util = require('util'),
+    EventEmitter = require('events').EventEmitter;
     
 var crlf = "\r\n";
 var crlf_len = crlf.length;
@@ -42,7 +43,7 @@ var Client = exports.Client = function(port, host) {
     this.handles = [];
 };
 
-sys.inherits(Client, process.EventEmitter);
+util.inherits(Client, EventEmitter);
 
 Client.prototype.connect = function () {
 	if (!this.conn) {
@@ -137,7 +138,7 @@ Client.prototype.store   = function(cmd, key, value, callback, lifetime, flags) 
 
 	var set_flags = flags || 0;
 	var exp_time  = lifetime || 0;
-    var tml_buf = new Buffer(value.toString());
+    var tml_buf = Buffer.from(value.toString());
 	var value_len = tml_buf.length || 0;
 	var query = [cmd, key, set_flags, exp_time, value_len];
 
@@ -162,7 +163,7 @@ Client.prototype.cas = function(key, value, unique, callback, lifetime, flags) {
 
 
 Client.prototype.del = function(key, callback){
-	sys.error("mc.del() is deprecated - use mc.delete() instead");
+	console.error("mc.del() is deprecated - use mc.delete() instead");
 	return this.delete(key, callback); 
 };
 
